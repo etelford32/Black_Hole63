@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Black Hole Simulation with Accretion Disc and Gravity</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.133.1/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.133.1/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        let scene, camera, renderer, controls;
+        let particles, particleMaterial, particleGeometry;
+        let trails = [];
+        const blackHoleMass = 50;  // Simulated mass of the black hole, affecting gravity
+
+        // Adjustable settings
+        const numParticles = 500;  // 10x fewer particles for testing
+        const radiusMin = 7;
+        const radiusMax = 500;
+        const discThickness = 14;
+        const particleSize = 0.5; // Fixed size for points
+        const trailLength = 10;  // Number of points in the trail
+
+        init();
+        animate();
+
+        function init() {
+            // Initialize Three.js components
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(0, 300, 600);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Add ambient light
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+
+            // Add orbit controls for camera movement
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.025;
+            controls.enableZoom = true;
+
+            // Create the 3D accretion disc with basic particles and trails
+            createAccretionDisc();
+
+            // Create the event horizon to visualize the black hole
+            createEventHorizon();
+        }
+
+        function createAccretionDisc() {
+            particleGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(numParticles * 3);
+            const sizes = new Float32Array(numParticles);
+
+            for (let i = 0; i < numParticles; i++) {
+                const theta = Math.random() * 2 * Math.PI;
+                const radius = radiusMin + Math.random() * (radiusMax - radiusMin);
+                const x = radius * Math.cos(theta);
+                const y = radius * Math.sin(theta);
+                const z = (Math.random() - 0.5) * discThickness;
+
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+                sizes[i] = particleSize;
+
+                // Initialize trail for each particle
+                trails.push({
+                    points: Array.from({ length: trailLength }, () => new THREE.Vector3(x, y, z)),
+                    geometry: new THREE.BufferGeometry(),
+                    line: null,
+                    velocity: new THREE.Vector3(-y, x, z).normalize().multiplyScalar(0.5)  // Initial tangential velocity
+                });
+            }
+
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particleGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+            // Use PointsMaterial for particles
+            particleMaterial = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: particleSize,
+                transparent: true,
+                opacity: 0.9
+            });
+
+            particles = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(particles);
+
+            // Initialize trails as lines
+            trails.forEach(trail => {
+                trail.geometry.setFromPoints(trail.points);
+                const trailMaterial = new THREE.LineBasicMaterial({
+                    color: 0x00ffff,
+                    transparent: true,
+                    opacity: 0.6
+                });
+                trail.line = new THREE.Line(trail.geometry, trailMaterial);
+                scene.add(trail.line);
+            });
+        }
+
+        function createEventHorizon() {
+            const eventHorizonGeometry = new THREE.CircleGeometry(10, 64);
+            const eventHorizonMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            const eventHorizon = new THREE.Mesh(eventHorizonGeometry, eventHorizonMaterial);
+            eventHorizon.rotation.x = -Math.PI / 2;  // Face the camera
+            scene.add(eventHorizon);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            const positions = particles.geometry.attributes.position.array;
+
+            for (let i = 0; i < numParticles; i++) {
+                const idx = i * 3;
+
+                // Calculate the gravitational pull
+                const particlePosition = new THREE.Vector3(positions[idx], positions[idx + 1], positions[idx + 2]);
+                const directionToBlackHole = particlePosition.clone().negate().normalize();
+                const distanceToBlackHole = particlePosition.length();
+                const gravityForce = directionToBlackHole.multiplyScalar(blackHoleMass / (distanceToBlackHole * distanceToBlackHole));
+
+                // Update velocity with gravity
+                trails[i].velocity.add(gravityForce);
+
+                // Update particle position
+                particlePosition.add(trails[i].velocity);
+                positions[idx] = particlePosition.x;
+                positions[idx + 1] = particlePosition.y;
+                positions[idx + 2] = particlePosition.z;
+
+                // Update trail
+                const trail = trails[i];
+                trail.points.pop();
+                trail.points.unshift(particlePosition.clone());
+                trail.geometry.setFromPoints(trail.points);
+                trail.geometry.attributes.position.needsUpdate = true;
+            }
+
+            particles.geometry.attributes.position.needsUpdate = true;
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
